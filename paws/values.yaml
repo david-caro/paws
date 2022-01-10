@@ -110,10 +110,10 @@ jupyterhub:
     extraVolumes:
     - name: homes
       hostPath:
-        path: /data/project
+        path: /mnt/project
     - name: dumps
       hostPath:
-        path: /public/dumps
+        path: /mnt/public/dumps
     # Without this, dumps becomes inaccessible and can hang the host
     - name: dumps-src1
       hostPath:
@@ -142,7 +142,9 @@ jupyterhub:
             return pod
 
           c.KubeSpawner.modify_pod_hook = fix_labels
-      myConfig: |
+      00-myConfig: |
+          localdev = True
+      10-myConfig: |
           import hmac
           import hashlib
           import subprocess
@@ -190,24 +192,50 @@ jupyterhub:
                   homedir = '/data/project/paws/userhomes/{}'.format(identity['sub'])
                   # Create the homedir so docker doesn't do it as root
                   os.makedirs(homedir, mode=0o755, exist_ok=True)
-                  spawner.volumes = [
-                      {
-                          'name': 'home',
-                          'hostPath': { 'path': homedir }
-                      },
-                      {
-                          'name': 'dumps',
-                          'hostPath': { 'path': '/public/dumps' }
-                      },
-                      {
-                          'name': 'dumps-src1',
-                          'hostPath': { 'path': '/mnt/nfs/dumps-labstore1007.wikimedia.org' }
-                      },
-                      {
-                          'name': 'dumps-src2',
-                          'hostPath': { 'path': '/mnt/nfs/dumps-labstore1006.wikimedia.org' }
-                      }
-                  ]
+                  if localdev == True:
+                      spawner.volumes = [
+                          {
+                              'name': 'home',
+                              'hostPath': { 'path': homedir }
+                          },
+                          {
+                              'name': 'dumps',
+                              'hostPath': { 'path': '/public/dumps' }
+                          },
+                          {
+                              'name': 'dumps-src1',
+                              'hostPath': { 'path': '/mnt/nfs/dumps-labstore1007.wikimedia.org' }
+                          },
+                          {
+                              'name': 'dumps-src2',
+                              'hostPath': { 'path': '/mnt/nfs/dumps-labstore1006.wikimedia.org' }
+                          }
+                      ]
+                  else:
+                      homenfs = '/mnt/project/paws/userhomes/{}'.format(identity['sub'])
+                      spawner.volumes = [
+                          {
+                              'name': 'home',
+                              'nfs': { 'server': '192.168.122.223', 'path': homenfs }
+                              #'nfs': { 'server': 'nfs-tools-project.svc.eqiad.wmnet', 'path': homenfs }
+                          },
+                          {
+                              'name': 'dumps',
+                              'nfs': { 'server': '192.168.122.223', 'path': '/mnt/public/dumps' }
+                              #'nfs': { 'server': 'labstore1007.wikimedia.org', 'path': '/' }
+                          },
+                          {
+                              'name': 'dumps-src1',
+                              'nfs': { 'server': '192.168.122.223', 'path': '/mnt/nfs/dumps-labstore1007.wikimedia.org' }
+                              #'nfs': { 'server': 'labstore1007.wikimedia.org', 'path': '/' }
+                          },
+                          {
+                              'name': 'dumps-src2',
+                              'nfs': { 'server': '192.168.122.223', 'path': '/mnt/nfs/dumps-labstore1006.wikimedia.org' }
+                              #'nfs': { 'server': 'labstore1006.wikimedia.org', 'path': '/' }
+                          }
+                      ]
+
                   spawner.volume_mounts = [
                       {
                           'name': 'home',
@@ -264,6 +292,7 @@ jupyterhub:
       runAsUser: 52771
   ingress: 
     enabled: true
+    annotations: {kubernetes.io/ingress.class: "nginx"}
     hosts:
       - hub.paws.local
   # We are not on an autoscaling cluster, so we don't want this
